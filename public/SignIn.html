@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="text/javascript" src="script.js" defer></script>
+</head>
+
+<body>
+    <div class="wrapper">
+        <h1>Create Account</h1>
+        <p id="error-message"></p>
+        <form id="form">
+            <div class="input-group">
+                <input type="text" name="firstname" id="firstname-input" placeholder=" " required>
+                <label for="firstname-input">First Name</label>
+            </div>
+            <div class="input-group">
+                <input type="text" name="lastname" id="lastname-input" placeholder=" " required>
+                <label for="lastname-input">Last Name</label>
+            </div>
+            <div class="input-group">
+                <input type="email" name="email" id="email-input" placeholder=" " required>
+                <label for="email-input">Email</label>
+            </div>
+            <div class="input-group">
+                <input type="password" name="password" id="password-input" placeholder=" " required>
+                <label for="password-input">Password</label>
+            </div>
+            <div class="input-group">
+                <input type="password" name="repeat-password" id="repeat-password-input" placeholder=" " required>
+                <label for="repeat-password-input">Repeat Password</label>
+            </div>
+            <button type="submit">Sign Up</button>
+        </form>
+        <p>Already have an account? <a href="login.html">Log In</a></p>
+    </div>
+</body>
+
+</html>
