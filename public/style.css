@@ -120,27 +120,9 @@ body {
     transition: 0.3s;
 }
 
-/* Login/Register Wrapper Override */
-body:not(.dashboard-body) {
-    justify-content: center;
-    align-items: center;
-}
-
-.wrapper {
-    background: var(--surface-color);
-    border-radius: 8px;
-    padding: 40px;
-    width: 100%;
-    max-width: 450px;
-    box-shadow: var(--shadow-2);
-}
-
-.dashboard-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0;
-    box-shadow: none;
-    background: transparent;
+padding: 0;
+box-shadow: none;
+background: transparent;
 }
 
 /* Tabs */
