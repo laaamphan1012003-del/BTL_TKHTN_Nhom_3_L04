@@ -5,9 +5,14 @@ const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const fs = require('fs');
+const http = require('http');
 
 const app = express();
 const PORT = 3000;
+
+//Cấu hình ESP32
+const ESP32_IP_ADDRESS = '192.168.1.170';
+const ESP32_PORT = 80; // Cổng HTTP/TCP mà ESP32 đang lắng nghe
 
 // --- MIDDLEWARE & STATIC FILES ---
 app.get('/', (req, res) => {
@@ -202,6 +207,56 @@ app.get('/api/log', (req, res) => {
         // Trả về nội dung log
         res.json({ success: true, logData: data });
     });
+});
+
+//7. Nhận Hex Frame và forward đến ESP32
+app.post('/api/send-frame', (req, res) => {
+    const { hexFrame } = req.body;
+
+    if (!hexFrame) {
+        return res.status(400).json({ success: false, message: 'Thiếu chuỗi Hex Frame.' });
+    }
+
+    console.log(`[FORWARD] Nhận Frame Hex từ Web: ${hexFrame}`);
+
+    // Chuẩn bị dữ liệu gửi đến ESP32
+    const postData = JSON.stringify({
+        frame: hexFrame
+    });
+
+    const options = {
+        hostname: ESP32_IP_ADDRESS,
+        port: ESP32_PORT,
+        path: '/receive_frame', // Endpoint trên ESP32
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+        }
+    };
+
+    const esp32Req = http.request(options, (esp32Res) => {
+        let data = '';
+        esp32Res.on('data', (chunk) => { data += chunk; });
+        esp32Res.on('end', () => {
+            console.log(`[FORWARD] ESP32 phản hồi: ${esp32Res.statusCode}`);
+            // Forward kết quả trả về của ESP32 (nếu có)
+            res.status(esp32Res.statusCode).json({
+                success: esp32Res.statusCode === 200,
+                message: esp32Res.statusCode === 200 ? 'Frame đã được gửi thành công tới ESP32.' : `ESP32 phản hồi lỗi: ${data}`,
+                esp32Response: data
+            });
+        });
+    });
+
+    esp32Req.on('error', (e) => {
+        console.error(`[FORWARD] Lỗi gửi Frame tới ESP32 (${ESP32_IP_ADDRESS}:${ESP32_PORT}): ${e.message}`);
+        res.status(503).json({ success: false, message: `Không thể kết nối với ESP32: ${e.message}` });
+    });
+
+    // Gửi dữ liệu đi
+    esp32Req.write(postData);
+    esp32Req.end();
 });
 
 // --- SERVER START & GRACEFUL SHUTDOWN ---

@@ -5,14 +5,51 @@ from PIL import Image, ImageTk
 import os 
 import subprocess  
 import datetime 
+import requests
 
 # Import lớp điều khiển Serial đã được sửa đổi
 from Serial_Com_ctrl import SerialCtrl
 
 # <<< THIẾT LẬP CỔNG COM VÀ BAUD RATE MẶC ĐỊNH TẠI ĐÂY >>>
-COM_PORT = 'COM4'  
-BAUD_RATE = 115200
+#COM_PORT = 'COM4'  
+#BAUD_RATE = 115200
 
+#<<< THIẾT LẬP ĐỊA CHỈ IP VÀ CỔNG CỦA ESP32 >>>
+ESP32_IP_ADDRESS = '192.168.1.170' # QUAN TRỌNG: Thay thế bằng IP thực của ESP32
+ESP32_PORT = 80
+
+# Endpoint trên ESP32 lắng nghe yêu cầu POST
+ESP32_FRAME_URL = f"http://{ESP32_IP_ADDRESS}:{ESP32_PORT}/receive_frame"
+
+# Hàm gửi Frame Hex đến ESP32
+def send_frame_to_esp32(hex_frame):
+    """
+    Gửi Frame Hex đến ESP32 qua HTTP POST.
+    """
+    print(f"[HTTP] Đang gửi Frame Hex đến ESP32 tại: {ESP32_FRAME_URL}")
+    payload = {'frame': hex_frame}
+    
+    try:
+        # Gửi POST request
+        response = requests.post(
+            ESP32_FRAME_URL, 
+            json=payload, 
+            timeout=5 # Thiết lập timeout 5 giây
+        )
+        
+        # Kiểm tra trạng thái phản hồi
+        if response.status_code == 200:
+            print(f"[HTTP SUCCESS] ESP32 phản hồi 200 OK. Frame đã được gửi.")
+            return True, response.json()
+        else:
+            print(f"[HTTP ERROR] ESP32 phản hồi lỗi: {response.status_code}")
+            print(f"   Phản hồi: {response.text}")
+            return False, response.json()
+            
+    except requests.exceptions.RequestException as e:
+        print(f"[NETWORK ERROR] Không thể kết nối tới ESP32: {e}")
+        return False, {"error": str(e), "message": "Lỗi kết nối mạng (Network Error)"}
+    
 class App:
     def __init__(self):
         self.main_window = tk.Tk()
@@ -27,9 +64,12 @@ class App:
         self.webcam_label = util.get_img_label(self.main_window)
         self.webcam_label.place(x=10, y=0,width=700,height=500)
         
+        self.db_dir = './db' 
+        self.log_path = './log.txt'
+        
         # <<< THÊM VÀO: Nhãn trạng thái kết nối Serial >>>
-        self.serial_status_label = tk.Label(self.main_window, text="Connecting to Serial Port...", font=("Helvetica", 12))
-        self.serial_status_label.place(x=750, y=20)
+        #self.serial_status_label = tk.Label(self.main_window, text="Connecting to Serial Port...", font=("Helvetica", 12))
+        #self.serial_status_label.place(x=750, y=20)
 
         # --- Webcam and Database Setup ---
         self.add_webcam(self.webcam_label)
@@ -39,18 +79,18 @@ class App:
         self.log_path = './log.txt'
         
         # <<< THÊM VÀO: Tự động kết nối Serial khi khởi động >>>
-        self.MySerial = SerialCtrl()
-        self.MySerial.SerialOpen_Auto(COM_PORT, BAUD_RATE)
-        self.update_serial_status()
+        #self.MySerial = SerialCtrl()
+        #self.MySerial.SerialOpen_Auto(COM_PORT, BAUD_RATE)
+        #self.update_serial_status()
 
         # Đảm bảo đóng cổng Serial khi tắt cửa sổ
-        self.main_window.protocol("WM_DELETE_WINDOW", self.on_closing)
+        #self.main_window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    def update_serial_status(self):
-        if self.MySerial.ser.status:
-            self.serial_status_label.config(text=f"Connected: {COM_PORT}", fg="green")
-        else:
-            self.serial_status_label.config(text=f"Disconnected: {COM_PORT}", fg="red")
+    #def update_serial_status(self):
+       # if self.MySerial.ser.status:
+            #self.serial_status_label.config(text=f"Connected: {COM_PORT}", fg="green")
+        #else:
+            #self.serial_status_label.config(text=f"Disconnected: {COM_PORT}", fg="red")
 
     def create_and_send_frame(self, command, data_payload=b''):
         '''
@@ -70,8 +110,12 @@ class App:
         # Tạo frame hoàn chỉnh
         frame = bytearray([SOF, command, length]) + data_payload + bytearray([checksum, EOF])
         
-        print(f"Sending frame: {' '.join(f'{b:02X}' for b in frame)}")
-        self.MySerial.SendData(frame)
+        # Chuyển frame thành chuỗi hex và gửi đến ESP32
+        hex_string = ' '.join(f'{b:02X}' for b in frame)
+        
+        #self.MySerial.SendData(frame)
+        
+        return hex_string
 
     def login(self):
         self.login_button_main_window.config(state=tk.DISABLED)
@@ -80,32 +124,43 @@ class App:
 
         try:
             output = subprocess.check_output(['face_recognition', self.db_dir, unknown_image_path], stderr=subprocess.STDOUT)
-            name = output.decode('utf-8').split(',')[1].strip()
+            name_output = output.decode('utf-8').strip()
+            name = name_output.split('\n')[0].split(',')[1].strip()
         except Exception:
-            name = "unknown_person"
-            
+            name = "unknown"
+        
+        frame_to_send = ""
+        user_name = ""
+        data_payload = b''         
+        
         if name in ['no_persons_found', 'unknown_person']:
             util.msg_box("Login Failed", "Access Denied.")
             # <<< GỬI FRAME TỪ CHỐI (Giữ nguyên) >>>
-            self.create_and_send_frame(command=0x00) 
+            frame_to_send = self.create_and_send_frame(command=0x00, data_payload=data_payload) 
         else:
-            util.msg_box("Login Success", f"Welcome, {name}!\nAccess Granted.")
+            user_name = name
+            util.msg_box("Login Success", f"Welcome, {user_name}!\nAccess Granted.")
             with open(self.log_path, 'a') as f:
-                f.write(f'{name},{datetime.datetime.now()}\n')
+                f.write(f'{user_name},{datetime.datetime.now()}\n')
             
-            # <<< GỬI FRAME XÁC NHẬN KÈM TÊN NGƯỜI DÙNG >>>
-            # 1. Chuyển đổi tên từ String sang Bytes
-            name_bytes = name.encode('utf-8') 
-            
-            # 2. Gửi frame với data_payload là tên người dùng
-            self.create_and_send_frame(command=0x01, data_payload=name_bytes) 
+            # <<< LOGIN SUCCESS >>>
+            frame_to_send = self.create_and_send_frame(command=0x01, data_payload=data_payload)  
 
+        # <<<Gửi Frame đến ESP32>>>
+        if frame_to_send:
+            success, result = send_frame_to_esp32(frame_to_send)
+            
+            if success:
+                print(f"[{'SUCCESS' if user_name else 'DENIED'}] [FRAME HEX]: {frame_to_send}")
+            else:
+                util.msg_box("Lỗi Gửi Frame", f"Lỗi gửi Frame đến ESP32: {result.get('message', 'Không rõ lỗi')}")
+                
         os.remove(unknown_image_path)
         self.login_button_main_window.config(state=tk.NORMAL)
 
     def on_closing(self):
-        print("Closing application and serial port.")
-        self.MySerial.SerialClose()
+        #print("Closing application and serial port.")
+        #self.MySerial.SerialClose()
         self.main_window.destroy()
 
     # --- Các hàm khác giữ nguyên từ file main.py ---
