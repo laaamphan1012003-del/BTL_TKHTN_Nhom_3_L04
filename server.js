@@ -3,21 +3,28 @@ const sqlite3 = require('sqlite3').verbose();
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
+const bcrypt = require('bcrypt');
 
 const app = express();
 const PORT = 3000;
 
+// --- MIDDLEWARE & STATIC FILES ---
+app.get('/', (req, res) => {
+    res.redirect('/login.html');
+});
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public'))); // Serve static files from 'public'
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Database Setup
 const db = new sqlite3.Database('./database.sqlite', (err) => {
     if (err) {
-        console.error('Error opening database:', err.message);
+        console.error('Lỗi kết nối database:', err.message);
     } else {
-        console.log('Connected to the SQLite database.');
+        console.log('Đã kết nối tới SQLite database.');
         createTables();
     }
 });
@@ -41,62 +48,67 @@ function createTables() {
     )`);
 }
 
-// API Routes
+// --- API ROUTES ---
 
-// Register
-app.post('/api/register', (req, res) => {
+// 1. Đăng ký
+app.post('/api/register', async (req, res) => {
     const { firstname, lastname, email, password } = req.body;
 
     if (!firstname || !lastname || !email || !password) {
-        return res.status(400).json({ success: false, message: 'All fields are required.' });
+        return res.status(400).json({ success: false, message: 'Vui lòng điền đầy đủ thông tin.' });
     }
 
-    // In a real app, you should hash the password here (e.g., using bcrypt)
-    // For simplicity in this demo, we store it as is (NOT RECOMMENDED FOR PRODUCTION)
-
-    const sql = `INSERT INTO users (firstname, lastname, email, password) VALUES (?, ?, ?, ?)`;
-    db.run(sql, [firstname, lastname, email, password], function (err) {
-        if (err) {
-            if (err.message.includes('UNIQUE constraint failed')) {
-                return res.status(400).json({ success: false, message: 'Email already exists.' });
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        const sql = `INSERT INTO users (firstname, lastname, email, password) VALUES (?, ?, ?, ?)`;
+        db.run(sql, [firstname, lastname, email, hashedPassword], function (err) {
+            if (err) {
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ success: false, message: 'Email này đã được sử dụng.' });
+                }
+                return res.status(500).json({ success: false, message: err.message });
             }
-            return res.status(500).json({ success: false, message: err.message });
-        }
-        res.json({ success: true, message: 'User registered successfully.', userId: this.lastID });
-    });
+            res.json({ success: true, message: 'Đăng ký thành công.', userId: this.lastID });
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Lỗi server.' });
+    }
 });
 
-// Login
+// 2. Đăng nhập
 app.post('/api/login', (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-        return res.status(400).json({ success: false, message: 'Email and password are required.' });
+        return res.status(400).json({ success: false, message: 'Vui lòng nhập email và mật khẩu.' });
     }
 
-    const sql = `SELECT * FROM users WHERE email = ? AND password = ?`;
-    db.get(sql, [email, password], (err, row) => {
-        if (err) {
-            return res.status(500).json({ success: false, message: err.message });
-        }
-        if (row) {
+    const sql = `SELECT * FROM users WHERE email = ?`;
+    db.get(sql, [email], async (err, user) => {
+        if (err) return res.status(500).json({ success: false, message: 'Lỗi database.' });
+        if (!user) return res.status(401).json({ success: false, message: 'Email hoặc mật khẩu không đúng.' });
+
+        const match = await bcrypt.compare(password, user.password);
+        if (match) {
             res.json({
                 success: true,
-                message: 'Login successful.',
-                user: { id: row.id, firstname: row.firstname, lastname: row.lastname }
+                message: 'Đăng nhập thành công.',
+                user: { id: user.id, firstname: user.firstname, lastname: user.lastname, email: user.email }
             });
         } else {
-            res.status(401).json({ success: false, message: 'Invalid email or password.' });
+            res.status(401).json({ success: false, message: 'Email hoặc mật khẩu không đúng.' });
         }
     });
 });
 
-// ESP32 Data Endpoint
+// 3. Nhận dữ liệu từ ESP32
 app.post('/api/esp32', (req, res) => {
     const { temperature, humidity, led_status } = req.body;
+    console.log('Nhận dữ liệu từ ESP32:', req.body);
 
     if (temperature === undefined || humidity === undefined) {
-        return res.status(400).json({ success: false, message: 'Invalid data.' });
+        return res.status(400).json({ success: false, message: 'Thiếu dữ liệu cảm biến.' });
     }
 
     const sql = `INSERT INTO sensor_data (temperature, humidity, led_status) VALUES (?, ?, ?)`;
@@ -104,25 +116,39 @@ app.post('/api/esp32', (req, res) => {
         if (err) {
             return res.status(500).json({ success: false, message: err.message });
         }
-        res.json({ success: true, message: 'Data received.' });
+        res.json({ success: true, message: 'Đã lưu dữ liệu.' });
     });
 });
 
+// 4. Lấy dữ liệu cho Dashboard
 app.get('/api/esp32', (req, res) => {
-    const sql = `SELECT * FROM sensor_data ORDER BY created_at DESC LIMIT 1`;
-    db.get(sql, [], (err, row) => {
+    const sql = `SELECT * FROM sensor_data ORDER BY created_at DESC LIMIT 20`;
+    db.all(sql, [], (err, rows) => {
         if (err) {
             return res.status(500).json({ success: false, message: err.message });
         }
-        if (row) {
-            res.json({ success: true, data: row });
-        } else {
-            res.json({ success: false, message: 'No data found.' });
-        }
+        res.json({ success: true, data: rows.reverse() });
     });
 });
 
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// --- SERVER START & GRACEFUL SHUTDOWN ---
+
+const server = app.listen(PORT, () => {
+    console.log(`Server đang chạy tại http://localhost:${PORT}`);
+});
+
+// Lắng nghe sự kiện ngắt server (Ctrl + C)
+process.on('SIGINT', () => {
+    console.log('\nĐang ngắt kết nối Server...');
+    
+    server.close(() => {
+        console.log(`Đã đóng cổng ${PORT}. Dọn dẹp hoàn tất.`);
+        
+        db.close((err) => {
+            if (err) console.error(err.message);
+            else console.log('Đã đóng kết nối Database.');
+            
+            process.exit(0);
+        });
+    });
 });
