@@ -1,145 +1,129 @@
 const API_URL = 'http://localhost:3000/api';
 
 document.addEventListener('DOMContentLoaded', () => {
-    checkAuth(); // Kiểm tra đăng nhập
-    initDashboard(); // Khởi chạy biểu đồ và lấy dữ liệu
+    checkAuth();
+    setupSidebar();
+    
+    // Mặc định load dashboard
+    initDashboard();
 });
 
-// 1. Kiểm tra Auth & Logout
+// --- SIDEBAR & TABS ---
+function setupSidebar() {
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user) {
+        document.getElementById('sidebar-username').innerText = `${user.firstname} ${user.lastname}`;
+        document.getElementById('sidebar-email').innerText = user.email;
+    }
+
+    const toggleBtn = document.getElementById('toggle-btn');
+    const sidebar = document.getElementById('sidebar');
+    if (toggleBtn && sidebar) {
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+        });
+    }
+}
+
+window.switchTab = function(tabName) {
+    // 1. Highlight nút active
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => item.classList.remove('active'));
+    
+    const activeBtn = event.currentTarget;
+    if(activeBtn) activeBtn.classList.add('active');
+
+    // 2. Chuyển View
+    const views = document.querySelectorAll('.view-section');
+    views.forEach(v => v.classList.remove('active'));
+
+    if (tabName === 'dashboard') {
+        const dbView = document.getElementById('view-dashboard');
+        if(dbView) dbView.classList.add('active');
+    } else if (tabName === 'users') {
+        const usersView = document.getElementById('view-users');
+        if(usersView) {
+            usersView.classList.add('active');
+            loadUsers();
+        }
+    }
+};
+
+// --- USER MANAGEMENT ---
+async function loadUsers() {
+    const tableBody = document.getElementById('user-table-body');
+    if(!tableBody) return;
+    
+    tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Loading data...</td></tr>';
+
+    try {
+        const response = await fetch(`${API_URL}/users`);
+        const result = await response.json();
+
+        if (result.success) {
+            tableBody.innerHTML = '';
+            result.data.forEach(user => {
+                const regDate = new Date(user.created_at).toLocaleString();
+                const lastLogin = user.last_login ? new Date(user.last_login).toLocaleString() : 'Never';
+                
+                const row = `
+                    <tr>
+                        <td>#${user.id}</td>
+                        <td style="font-weight:500; color:#333;">${user.firstname} ${user.lastname}</td>
+                        <td>${user.email}</td>
+                        <td>${regDate}</td>
+                        <td><span style="color:${user.last_login ? '#50cd89' : '#b5b5c3'}">${lastLogin}</span></td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+    } catch (error) {
+        tableBody.innerHTML = '<tr><td colspan="5" style="color:red; text-align:center;">Error loading users</td></tr>';
+        console.error(error);
+    }
+}
+
+// --- AUTH ---
 function checkAuth() {
     const user = localStorage.getItem('user');
-    if (!user) {
-        // Nếu chưa đăng nhập, đá về trang login
-        window.location.href = '../login.html';
-    }
+    if (!user) window.location.href = '../login.html';
 }
 
-function logout() {
+window.logout = function() {
     localStorage.removeItem('user');
     window.location.href = '../login.html';
-}
+};
 
-// 2. Khởi tạo Dashboard
-let chartCtx;
-
+// --- DASHBOARD REALTIME ---
 function initDashboard() {
-    const canvas = document.getElementById('sensorChart');
-    if (canvas) {
-        // Set kích thước canvas theo khung chứa
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        chartCtx = canvas.getContext('2d');
-    }
-
-    // Gọi dữ liệu ngay lập tức
     fetchSensorData();
-
-    // Cập nhật định kỳ 2 giây/lần
+    // Gọi mỗi 2 giây
     setInterval(fetchSensorData, 2000);
 }
 
-// 3. Lấy dữ liệu từ Server
 async function fetchSensorData() {
     try {
         const response = await fetch(`${API_URL}/esp32`);
         const result = await response.json();
-
         if (result.success && result.data.length > 0) {
-            const latest = result.data[result.data.length - 1]; // Phần tử mới nhất
-            
-            // Cập nhật số liệu hiển thị
-            updateDashboardUI(latest);
-
-            // Vẽ biểu đồ
-            drawChart(result.data);
-            
-            // Cập nhật log (giả lập log dựa trên dữ liệu)
-            updateLogs(latest);
+            updateLogs(result.data[result.data.length - 1]);
         }
-    } catch (error) {
-        console.error('Lỗi lấy dữ liệu cảm biến:', error);
-    }
+    } catch (e) { console.error('Log fetch error', e); }
 }
 
-function updateDashboardUI(data) {
-    const tempEl = document.getElementById('temp-value');
-    const humidEl = document.getElementById('humid-value');
-    
-    if (tempEl) tempEl.innerText = data.temperature.toFixed(1) + ' °C';
-    if (humidEl) humidEl.innerText = data.humidity.toFixed(1) + ' %';
-}
-
+let lastLogId = null;
 function updateLogs(data) {
     const logList = document.getElementById('log-list');
     if (!logList) return;
-
-    // Chỉ thêm log nếu chưa có (đơn giản hóa cho demo)
-    const now = new Date().toLocaleTimeString();
-    const logMsg = `<span class="timestamp">[${now}]</span> Data received: Temp ${data.temperature}°C, Humid ${data.humidity}%`;
     
-    // Tạo phần tử log mới
-    const newItem = document.createElement('div');
-    newItem.className = 'log-item';
-    newItem.innerHTML = logMsg;
+    const currentId = data.id || data.created_at;
+    if (lastLogId === currentId) return;
+    lastLogId = currentId;
 
-    // Thêm vào đầu danh sách
-    logList.insertBefore(newItem, logList.firstChild);
-
-    // Giới hạn 20 dòng log
-    if (logList.children.length > 20) {
-        logList.removeChild(logList.lastChild);
-    }
-}
-
-// 4. Vẽ biểu đồ (Thủ công, không cần thư viện ngoài)
-function drawChart(dataArray) {
-    if (!chartCtx) return;
-
-    const width = chartCtx.canvas.width;
-    const height = chartCtx.canvas.height;
-    const padding = 40;
-
-    // Xóa canvas cũ
-    chartCtx.clearRect(0, 0, width, height);
-
-    // Vẽ trục tọa độ
-    chartCtx.beginPath();
-    chartCtx.strokeStyle = '#ccc';
-    chartCtx.lineWidth = 1;
-    chartCtx.moveTo(padding, padding);
-    chartCtx.lineTo(padding, height - padding);
-    chartCtx.lineTo(width - padding, height - padding);
-    chartCtx.stroke();
-
-    // Hàm ánh xạ giá trị (Mapping)
-    const mapX = (i) => padding + (i / (dataArray.length - 1 || 1)) * (width - 2 * padding);
-    const mapY = (val, min, max) => height - padding - ((val - min) / (max - min)) * (height - 2 * padding);
-
-    // Vẽ đường Nhiệt độ (Đỏ)
-    if (dataArray.length > 1) {
-        chartCtx.beginPath();
-        chartCtx.strokeStyle = '#d32f2f';
-        chartCtx.lineWidth = 2;
-        dataArray.forEach((item, i) => {
-            const x = mapX(i);
-            const y = mapY(item.temperature, 0, 50); // Scale nhiệt độ 0-50
-            if (i === 0) chartCtx.moveTo(x, y);
-            else chartCtx.lineTo(x, y);
-        });
-        chartCtx.stroke();
-    }
-
-    // Vẽ đường Độ ẩm (Xanh)
-    if (dataArray.length > 1) {
-        chartCtx.beginPath();
-        chartCtx.strokeStyle = '#0288d1';
-        chartCtx.lineWidth = 2;
-        dataArray.forEach((item, i) => {
-            const x = mapX(i);
-            const y = mapY(item.humidity, 0, 100); // Scale độ ẩm 0-100
-            if (i === 0) chartCtx.moveTo(x, y);
-            else chartCtx.lineTo(x, y);
-        });
-        chartCtx.stroke();
-    }
+    const now = new Date().toLocaleTimeString();
+    const logMsg = `<div class="log-item"><span class="timestamp">[${now}]</span> Temp: ${data.temperature}°C | Humid: ${data.humidity}%</div>`;
+    
+    logList.insertAdjacentHTML('afterbegin', logMsg);
+    if (logList.children.length > 50) logList.removeChild(logList.lastChild);
 }

@@ -4,73 +4,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Home Dashboard</title>
+    <title>System Monitor Center</title>
+    
+    <!-- Link CSS -->
     <link rel="stylesheet" href="../style.css">
-    <script type="text/javascript" src="../script.js" defer></script>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Link Script -->
+    <script type="text/javascript" src="script.js" defer></script>
 </head>
 
-<body class="dashboard-body">
+<body>
 
-    <div class="dashboard-container">
-        <header class="dashboard-header">
-            <h1>Smart Home Dashboard</h1>
-            <button class="logout-btn" onclick="logout()">Logout</button>
-        </header>
-
-        <div class="dashboard-grid">
-            <!-- Sensor Cards -->
-            <div class="card">
-                <h3>Temperature</h3>
-                <!-- ID này phải khớp với script.js: temp-value -->
-                <div class="sensor-value" id="temp-value">--</div>
-            </div>
-            <div class="card">
-                <h3>Humidity</h3>
-                <!-- ID này phải khớp với script.js: humid-value -->
-                <div class="sensor-value" id="humid-value">--</div>
+    <div class="app-layout">
+        
+        <!-- SIDEBAR -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-area">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="32" viewBox="0 96 960 960" width="32" fill="#fff">
+                        <path d="M520 856V616h280v240H520Zm-360 0V496h280v360H160Zm360-440V176h280v240H520ZM160 416V176h280v240H160Z"/>
+                    </svg>
+                    <span class="app-name">IoT Monitor</span>
+                </div>
+                <button id="toggle-btn" class="toggle-btn" aria-label="Toggle Sidebar" title="Toggle Sidebar">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 96 960 960" width="24" fill="#fff"><path d="M120 256v64h720v-64H120Zm0 200v64h720v-64H120Zm0 200v64h720v-64H120Z"/></svg>
+                </button>
             </div>
 
-            <!-- Real-time Chart -->
-            <div class="card chart-container">
-                <h3>Live Data</h3>
-                <canvas id="sensorChart"></canvas>
+            <!-- User Info -->
+            <div class="user-profile">
+                <div class="avatar-circle">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="40" viewBox="0 96 960 960" width="40" fill="#333"><path d="M480 576q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM240 896v-60q0-38 19-69t51-49q58-29 113.5-43.5T480 660q61 0 116.5 14.5T710 718q32 18 51 49t19 69v60H240Z"/></svg>
+                </div>
+                <div class="user-details">
+                    <h4 id="sidebar-username">User Name</h4>
+                    <span id="sidebar-email">user@example.com</span>
+                </div>
             </div>
 
-            <!-- Device List -->
-            <div class="card">
-                <h3>Connected Devices</h3>
-                <ul class="device-list">
-                    <li class="device-item">
-                        <span><span class="status-indicator status-on"></span>Server Control</span>
-                        <span>Online</span>
-                    </li>
-                    <li class="device-item">
-                        <span><span class="status-indicator status-off"></span>ESP32 Device</span>
-                        <!-- Trạng thái này có thể nâng cấp để check real-time sau -->
-                        <span>Check Console</span>
-                    </li>
-                </ul>
-            </div>
+            <!-- Navigation Tabs -->
+            <nav class="sidebar-nav">
+                <button class="nav-item active" onclick="switchTab('dashboard')">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 96 960 960" width="24" fill="currentColor"><path d="M160 856h240V536H160v320Zm398 0h242V296H558v560ZM160 416h240V296H160v120Z"/></svg>
+                    <span>Dashboard</span>
+                </button>
+                <button class="nav-item" onclick="switchTab('users')">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 96 960 960" width="24" fill="currentColor"><path d="M480 576q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM240 896v-60q0-38 19-69t51-49q58-29 113.5-43.5T480 660q61 0 116.5 14.5T710 718q32 18 51 49t19 69v60H240Z"/></svg>
+                    <span>User List</span>
+                </button>
+            </nav>
 
-            <!-- Face Attendance Link -->
-            <div class="card">
-                <h3>Face Attendance</h3>
-                <p>Manage registered faces and view attendance logs.</p>
-                <a href="../face-recognition.html" class="btn-link">Go to Module</a>
+            <div class="sidebar-footer">
+                <button class="logout-btn" onclick="logout()">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 96 960 960" width="24" fill="currentColor"><path d="M200 856V296h60v500h380v60H200Zm260-200v-60h264L600 472l42-42 198 198-198 198-42-42 124-124H460Z"/></svg>
+                    <span>Logout</span>
+                </button>
             </div>
+        </aside>
 
-            <!-- Event Log -->
-            <div class="card">
-                <h3>System Logs</h3>
-                <div class="log-list" id="log-list">
-                    <div class="log-item">
-                        <span class="timestamp">System:</span> Waiting for ESP32 data...
+        <!-- MAIN CONTENT AREA -->
+        <main class="main-content">
+            
+            <!-- VIEW 1: DASHBOARD  -->
+            <div id="view-dashboard" class="view-section active">
+                <header class="content-header">
+                    <h2>Live Monitor</h2>
+                </header>
+
+                <div class="dashboard-grid">
+                    <!-- LOG  -->
+                    <div class="card log-card">
+                        <h3>Server Activity Log</h3>
+                        <div class="log-window" id="log-list">
+                            <div class="log-item"><span class="timestamp">System:</span> Dashboard ready.</div>
+                        </div>
+                    </div>
+
+                    <!-- MODULES  -->
+                    <div class="sub-modules">
+                        <div class="card small-card">
+                            <h3>Network</h3>
+                            <ul class="device-list">
+                                <li class="device-item">
+                                    <span><span class="status-indicator status-on"></span>Node Server</span>
+                                    <span class="status-text">Active</span>
+                                </li>
+                                <li class="device-item">
+                                    <span><span class="status-indicator status-waiting"></span>ESP32</span>
+                                    <span class="status-text">Waiting</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="card small-card">
+                            <h3>Face ID</h3>
+                            <div class="module-content">
+                                <a href="../face-recognition.html" class="btn-link">Access Module</a>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+
+            <!-- VIEW 2: USER TABLE  -->
+            <div id="view-users" class="view-section">
+                <header class="content-header">
+                    <h2>Registered Users</h2>
+                    <button class="refresh-btn" onclick="loadUsers()">Refresh Data</button>
+                </header>
+
+                <div class="card table-card">
+                    <table class="user-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Registered At</th>
+                                <th>Last Login</th>
+                            </tr>
+                        </thead>
+                        <tbody id="user-table-body">
+                            <!-- Dữ liệu sẽ đổ vào đây -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
     </div>
 
 </body>
-
 </html>
