@@ -29,12 +29,13 @@
 
         <div class="card" style="margin-top: 20px;">
             <h3>Integration Instructions</h3>
-            <p style="text-align: left;">To enable this module, please copy your Python files into the
+            <p style="text-align: left;">To enable this module, please recreate folder .venv in folder TKHTN
                 <code>TKHTN</code> directory.</p>
             <ul style="text-align: left; margin-top: 10px; margin-left: 20px; color: var(--text-secondary);">
-                <li>Copy <code>main.py</code> (or entry file) to <code>g:\VScode_blue\projects\study\TKHTN\</code></li>
-                <li>Ensure all dependencies are installed.</li>
-                <li>Update the server configuration to launch the Python script.</li>
+                <li>Delete the previous vnev: <code>Remove-Item .venv -Recurse -Force</code></li>
+                <li>Create new venv: <code>python -m venv .venv</code></li>
+                <li>Activate venv: <code>.\.venv\Scripts\Activate.ps1</code></li>
+                <li>Installation: <code>pip install -r requirements.txt</code> </li>
             </ul>
         </div>
 
