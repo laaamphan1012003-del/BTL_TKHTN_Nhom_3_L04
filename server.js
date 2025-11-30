@@ -72,6 +72,79 @@ function createTables() {
     });
 }
 
+//LED STATUS từ ESP32
+function getEsp32LedStatus(callback) {
+    const options = {
+        hostname: ESP32_IP_ADDRESS,
+        port: ESP32_PORT,
+        path: '/api/led/status', // Endpoint giả định trên ESP32
+        method: 'GET'
+    };
+
+    const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+            if (res.statusCode === 200) {
+                try {
+                    const jsonResponse = JSON.parse(data);
+                    // Expected response: { "led_status": 1 or 0 }
+                    callback(null, jsonResponse);
+                } catch (e) {
+                    callback(new Error('Lỗi Parse JSON từ ESP32: ' + e.message));
+                }
+            } else {
+                callback(new Error(`ESP32 phản hồi lỗi ${res.statusCode}: ${data}`));
+            }
+        });
+    });
+
+    req.on('error', (e) => {
+        callback(new Error(`Lỗi kết nối ESP32: ${e.message}`));
+    });
+
+    req.end();
+}
+
+// Gửi lệnh toggle LED đến ESP32
+function postEsp32LedToggle(status, callback) {
+    const postData = JSON.stringify({ status: status });
+
+    const options = {
+        hostname: ESP32_IP32_ADDRESS,
+        port: ESP32_PORT,
+        path: '/api/led/toggle', // Endpoint giả định trên ESP32
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postData)
+        }
+    };
+
+    const req = http.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+            if (res.statusCode === 200) {
+                try {
+                    callback(null, JSON.parse(data));
+                } catch (e) {
+                    callback(new Error('Lỗi Parse JSON từ ESP32: ' + e.message));
+                }
+            } else {
+                callback(new Error(`ESP32 phản hồi lỗi ${res.statusCode}: ${data}`));
+            }
+        });
+    });
+
+    req.on('error', (e) => {
+        callback(new Error(`Lỗi kết nối ESP32: ${e.message}`));
+    });
+
+    req.write(postData);
+    req.end();
+}
+
 // --- API MODULE STATUS ---
 
 // Kiểm tra trạng thái hệ thống
