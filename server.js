@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
 
 const app = express();
 const PORT = 3000;
@@ -30,6 +31,7 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
 });
 
 function createTables() {
+    //Bảng người dùng
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         firstname TEXT,
@@ -40,14 +42,44 @@ function createTables() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-    db.run(`CREATE TABLE IF NOT EXISTS sensor_data (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        temperature REAL,
-        humidity REAL,
-        led_status INTEGER DEFAULT 0,
+    // Bảng trạng thái thiết bị (CHỈ CÓ LED STATUS)
+    db.run(`CREATE TABLE IF NOT EXISTS device_status (
+        id INTEGER PRIMARY KEY,
+        led_status INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
+    )`, (err) => {
+        if (err) {
+            console.error("Lỗi khi tạo bảng device_status:", err.message);
+            return;
+        }
+
+        // Bản ghi trạng thái ban đầu (VỚI ID = 1)
+        db.get(`SELECT COUNT(*) as count FROM device_status`, (err, row) => {
+            if (err) return console.error('Lỗi kiểm tra bản ghi device_status:', err.message);
+            if (row.count === 0) {
+                // SỬ DỤNG id=1 để đơn giản hóa UPDATE sau này
+                db.run(`INSERT INTO device_status (id, led_status) VALUES (1, 0)`, (err) => {
+                    if (err) console.error('Lỗi khi INSERT device_status ban đầu:', err.message);
+                    else console.log('Đã tạo bản ghi device_status ban đầu.');
+                });
+            }
+        });
+    });
 }
+
+// --- API MODULE STATUS ---
+
+// Kiểm tra trạng thái hệ thống
+app.get('/api/status', (req, res) => {
+    res.json({
+        success: true,
+        status: {
+            server: 'running',
+            database: 'connected',
+            timestamp: new Date().toISOString()
+        }
+    });
+});
 
 // --- API ROUTES ---
 
@@ -117,30 +149,58 @@ app.get('/api/users', (req, res) => {
 
 // 4. Nhận dữ liệu từ ESP32
 app.post('/api/esp32', (req, res) => {
-    const { temperature, humidity, led_status } = req.body;
-    console.log('Nhận dữ liệu từ ESP32:', req.body);
+    const { led_status } = req.body; //  LED STATUS
 
-    if (temperature === undefined || humidity === undefined) {
-        return res.status(400).json({ success: false, message: 'Thiếu dữ liệu cảm biến.' });
+    if (led_status === undefined) {
+        return res.status(400).json({ success: false, message: 'Thiếu dữ liệu led_status.' });
     }
 
-    const sql = `INSERT INTO sensor_data (temperature, humidity, led_status) VALUES (?, ?, ?)`;
-    db.run(sql, [temperature, humidity, led_status || 0], function (err) {
+    // Cập nhật trạng thái LED
+    const sql = `UPDATE device_status SET led_status = ?, created_at = CURRENT_TIMESTAMP WHERE id = (SELECT MAX(id) FROM device_status)`;
+    db.run(sql, [led_status], function (err) {
         if (err) {
-            return res.status(500).json({ success: false, message: err.message });
+            // Nếu chưa có bản ghi nào, thì insert
+            if (this.changes === 0) {
+                 db.run(`INSERT INTO device_status (led_status) VALUES (?)`, [led_status], (err) => {
+                    if (err) return res.status(500).json({ success: false, message: err.message });
+                    res.json({ success: true, message: 'Đã lưu trạng thái LED.' });
+                 });
+            } else {
+                return res.status(500).json({ success: false, message: err.message });
+            }
+        } else {
+            res.json({ success: true, message: 'Đã lưu trạng thái LED.' });
         }
-        res.json({ success: true, message: 'Đã lưu dữ liệu.' });
     });
 });
 
 // 5. Lấy dữ liệu cho Dashboard
 app.get('/api/esp32', (req, res) => {
-    const sql = `SELECT * FROM sensor_data ORDER BY created_at DESC LIMIT 20`;
-    db.all(sql, [], (err, rows) => {
+    // Chỉ lấy trạng thái LED mới nhất
+    const sql = `SELECT led_status FROM device_status ORDER BY created_at DESC LIMIT 1`;
+    db.get(sql, [], (err, row) => {
         if (err) {
             return res.status(500).json({ success: false, message: err.message });
         }
-        res.json({ success: true, data: rows.reverse() });
+        const status = row ? row.led_status : 0;
+        res.json({ success: true, led_status: status });
+    });
+});
+
+// 6. Lấy file log.txt
+app.get('/api/log', (req, res) => {
+    const logPath = path.join(__dirname, 'TKHTN', 'log.txt');
+    fs.readFile(logPath, 'utf8', (err, data) => {
+        if (err) {
+            // Đảm bảo trả về JSON ngay cả khi lỗi
+            if (err.code === 'ENOENT') {
+                return res.status(404).json({ success: false, message: 'File log.txt không tìm thấy trên server.' });
+            }
+            return res.status(500).json({ success: false, message: 'Lỗi đọc file log: ' + err.message });
+        }
+        
+        // Trả về nội dung log
+        res.json({ success: true, logData: data });
     });
 });
 
